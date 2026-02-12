@@ -1,0 +1,137 @@
+/*
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
+package oracle.code.triton;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.ParameterContext;
+import org.junit.jupiter.api.extension.ParameterResolver;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Method;
+import jdk.incubator.code.TypeElement;
+import jdk.incubator.code.Op;
+import jdk.incubator.code.dialect.core.CoreOp;
+import jdk.incubator.code.extern.DialectFactory;
+import jdk.incubator.code.extern.OpParser;
+import jdk.incubator.code.dialect.java.JavaType;
+import jdk.incubator.code.Reflect;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
+
+public class TritonTestExtension implements ParameterResolver {
+
+    @Target({ElementType.METHOD, ElementType.FIELD})
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Kernel {
+        String value();
+    }
+
+    @Override
+    public boolean supportsParameter(ParameterContext pc, ExtensionContext ec) {
+        return pc.getParameter().getType() == TritonTestData.class;
+    }
+
+    @Override
+    public Object resolveParameter(ParameterContext pc, ExtensionContext ec) {
+        Kernel k = ec.getRequiredTestMethod().getAnnotation(Kernel.class);
+        String kernelName = (k != null)
+            ? k.value()
+            : ec.getRequiredTestMethod().getName();
+
+        return new TritonTestData(ec.getRequiredTestClass(), kernelName);
+    }
+
+    public static class TritonTestData {
+        final Class<?> testClass;
+        final String javaKernelName;
+
+        public TritonTestData(Class<?> testClass, String javaKernelName) {
+            this.testClass = testClass;
+            this.javaKernelName = javaKernelName;
+        }
+
+        public void test(List<? extends TypeElement> argTypes) {
+            Optional<Method> om = Stream.of(testClass.getDeclaredMethods())
+                    .filter(m -> m.getName().equals(javaKernelName))
+                    .filter(m -> m.getAnnotation(Reflect.class) != null)
+                    .findFirst();
+            Method m = om.get();
+            TritonCodeModel tcm = m.getAnnotation(TritonCodeModel.class);
+            boolean doSSA = tcm != null ? tcm.SSA() : true;
+            TritonOps.ModuleOp expected = null;
+            boolean hasComparableExpected = false;
+            if (tcm != null && !tcm.value().isEmpty()) {
+                try {
+                    expected = expectedTritonKernel(tcm);
+                    hasComparableExpected = true;
+                } catch (UnsupportedOperationException ex) {
+                    // Some Babylon builds no longer parse older @TritonCodeModel text forms.
+                    hasComparableExpected = false;
+                }
+            }
+            test(Op.ofMethod(m).get(), argTypes, expected, hasComparableExpected, doSSA);
+        }
+
+        public TritonOps.ModuleOp expectedTritonKernel(TritonCodeModel tcm) {
+            if (tcm == null || tcm.value().isEmpty()) {
+                return null;
+            }
+
+            DialectFactory testDialectFactory = new DialectFactory(
+                    TritonOps.OP_FACTORY
+                            .andThen(ArithMathOps.OP_FACTORY)
+                            .andThen(TritonTestOps.FACTORY)
+                            .andThen(SCFOps.OP_FACTORY)
+                            .andThen(CoreOp.CORE_OP_FACTORY),
+                    TritonOps.TYPE_FACTORY);
+
+            return (TritonOps.ModuleOp) OpParser.fromString(
+                    testDialectFactory,
+                    tcm.value()).get(0);
+        }
+
+        void test(CoreOp.FuncOp javaKernel,
+                  List<? extends TypeElement> argTypes,
+                  TritonOps.ModuleOp expectedTritonKernel,
+                  boolean hasComparableExpected,
+                  boolean doSSA) {
+            TritonOps.ModuleOp actualTritonKernel = ScopedValue.where(TritonTransformer.SV_SSA, doSSA).call(() -> {
+                return TritonTransformer.tritonModule(javaKernel, JavaType.VOID, argTypes);
+            });
+
+            if (hasComparableExpected) {
+                Assertions.assertEquals(expectedTritonKernel.toText(), actualTritonKernel.toText());
+            } else {
+                Assertions.assertNotNull(actualTritonKernel);
+                Assertions.assertFalse(actualTritonKernel.toText().isBlank());
+            }
+        }
+    }
+
+}

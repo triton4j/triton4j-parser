@@ -1,0 +1,4 @@
+rootProject.name = 'TritonParser'
+
+include('samples-plugin-build')
+project(':samples-plugin-build').projectDir = file('samples/plugin-build')

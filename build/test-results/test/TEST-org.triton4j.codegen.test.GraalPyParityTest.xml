@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.triton4j.codegen.test.GraalPyParityTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-02-12T16:14:48.070Z" hostname="Romans-MacBook-Air.local" time="5.638">
+  <properties/>
+  <testcase name="generatedJavaMatchesGraalPyResults()" classname="org.triton4j.codegen.test.GraalPyParityTest" time="5.628"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[[To redirect Truffle log output to a file use one of the following options:
+* '--log.file=<path>' if the option is passed using a guest language launcher.
+* '-Dpolyglot.log.file=<path>' if the option is passed using the host Java launcher.
+* Configure logging using the polyglot embedding API.]
+[engine] WARNING: The polyglot engine uses a fallback runtime that does not support runtime compilation to native code.
+Execution without runtime compilation will negatively impact the guest application performance.
+The following cause was found: JVMCI is not enabled for this JVM. Enable JVMCI using -XX:+EnableJVMCI.
+For more information see: https://www.graalvm.org/latest/reference-manual/embed-languages/#runtime-optimization-support.
+To disable this warning use the '--engine.WarnInterpreterOnly=false' option or the '-Dpolyglot.engine.WarnInterpreterOnly=false' system property.
+]]></system-err>
+</testsuite>
