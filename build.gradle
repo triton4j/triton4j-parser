@@ -199,6 +199,10 @@ dependencies {
 
 	testImplementation group: 'org.graalvm.polyglot', name: 'polyglot', version: '25.0.2'
 	testImplementation group: 'org.graalvm.python', name: 'python-embedding', version: '25.0.2'
+
+	testImplementation group: 'oracle.code', name: 'hat-core', version: '1.0'
+	testRuntimeOnly group: 'oracle.code', name: 'hat-backend-java-seq', version: '1.0'
+	testRuntimeOnly group: 'oracle.code', name: 'hat-backend-java-mt', version: '1.0'
 			
 	// https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
 	testImplementation group: 'org.slf4j', name: 'slf4j-simple', version: '2.0.17'		

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.triton4j.codegen.test.HatKernelExecutionTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-02-12T21:20:48.739Z" hostname="Romans-MacBook-Air.local" time="1.492">
+  <properties/>
+  <testcase name="executesKernelAndBenchmarksJavaBackends()" classname="org.triton4j.codegen.test.HatKernelExecutionTest" time="1.476"/>
+  <system-out><![CDATA[Java backend received computeContext 
+Java backend received computeContext 
+HAT vectorAdd (262144 elements): seq=10.749 ms, mt=16.351 ms, speedup(seq/mt)=0.657x
+Wrote performance report: /Users/roman/Projects/eclipse-workspace/TritonParser/build/reports/performance/hat-kernel-execution.json
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

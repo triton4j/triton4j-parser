@@ -47,7 +47,7 @@ How this relates to TritonParser:
 - `src/test/java/oracle/code/triton/*`: Triton transformation/validation tests.
 
 ## Prerequisites
-- JDK 26 with Babylon module support (`jdk.incubator.code`).
+- JDK 25 with Babylon module support (`jdk.incubator.code`).
   - Example from this setup:
     - `$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk`
 - Local Maven artifact:
@@ -218,6 +218,44 @@ Flags:
 - `-p`: parse in parallel
 - `-q`: quiet output
 - `-r`: retain parsed ASTs in memory
+
+### 6) Compare performance in GPU vs non-GPU modes
+Use the CLI benchmark subcommand to run two commands repeatedly and compare wall-clock timing.
+
+This is useful when you run the same workload in two environments (for example, Metal/GPU enabled vs CPU/fallback).
+
+Example:
+
+```bash
+./gradlew run --args="benchmark \
+  --gpu-cmd 'METAL_TC_BIN=/path/to/Metal.xctoolchain/usr/bin JAVA_HOME=$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk PATH=$METAL_TC_BIN:$JAVA_HOME/bin:$PATH ./gradlew --no-daemon metalBuild' \
+  --cpu-cmd 'JAVA_HOME=$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk PATH=$JAVA_HOME/bin:$PATH ./gradlew --no-daemon build' \
+  --report-file build/reports/performance/cli-benchmark.json \
+  --warmup 1 \
+  --iterations 5"
+```
+
+Notes:
+- The benchmark command measures total command runtime.
+- It is a practical integration benchmark for environment-level comparisons.
+- It does not directly launch Triton kernels from Java in-process (current `oracle.code.triton.Triton.*` APIs in this setup are transform-time stubs).
+- If `--report-file` is set, benchmark results are also written as JSON.
+
+### 7) Test in-process kernel execution with HAT backends
+Run the kernel execution benchmark test:
+
+```bash
+./gradlew test --tests org.triton4j.codegen.test.HatKernelExecutionTest
+```
+
+What it does:
+- Executes a reflected vector-add kernel through `hat.Accelerator.compute(...)`.
+- Runs both Java HAT backends:
+  - `hat.backend.java.JavaSequentialBackend`
+  - `hat.backend.java.JavaMultiThreadedBackend`
+- Validates output correctness and prints average runtime + speedup (`seq/mt`).
+- Writes a JSON report to:
+  - `build/reports/performance/hat-kernel-execution.json`
 
 ## Troubleshooting
 - `Could not resolve oracle.code:triton:1.0-SNAPSHOT`
