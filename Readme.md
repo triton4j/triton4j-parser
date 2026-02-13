@@ -1,5 +1,16 @@
 # TritonParser
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+![Java](https://img.shields.io/badge/Java-25%2B-orange)
+![Gradle](https://img.shields.io/badge/Build-Gradle-02303A?logo=gradle)
+
+## About
+TritonParser converts Triton-style Python kernels into Babylon/Triton-compatible Java source code.
+It combines a generated Python parser (`org.parsers.python.*`) with a Java codegen pipeline (`org.triton4j.codegen.TritonWriter`) so Java projects can use Triton-style GPU kernel workflows without rewriting core logic in Python.
+
+## Topics
+`triton` `babylon` `java` `codegen` `parser` `gpu` `ml-kernels` `python-parser`
+
 ## Purpose
 TritonParser converts Python Triton-style kernels into Java source code that targets the Babylon/Triton Java APIs.
 
@@ -59,6 +70,25 @@ How this relates to TritonParser:
 export JAVA_HOME=$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk
 export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew clean build
+```
+
+### Convenience: pin Babylon JDK for this repo
+Add this helper to your shell profile (`~/.zshrc`) so you can switch quickly when working in this project:
+
+```bash
+use_triton_jdk() {
+  export JAVA_HOME="$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  java --list-modules | grep jdk.incubator.code
+}
+```
+
+Then run:
+
+```bash
+cd /path/to/TritonParser
+use_triton_jdk
+./gradlew build
 ```
 
 ### Optional: Metal Toolchain Environment (macOS)
