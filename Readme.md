@@ -1,5 +1,7 @@
 # TritonParser
 
+![Triton4J](Triton4J.png)
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-25%2B-orange)
 ![Gradle](https://img.shields.io/badge/Build-Gradle-02303A?logo=gradle)
@@ -7,6 +9,7 @@
 ## About
 TritonParser converts Triton-style Python kernels into Babylon/Triton-compatible Java source code.
 It combines a generated Python parser (`org.parsers.python.*`) with a Java codegen pipeline (`org.triton4j.codegen.TritonWriter`) so Java projects can use Triton-style GPU kernel workflows without rewriting core logic in Python.
+It also includes TurboQuant samples, benchmark tooling, and HAT runtime experiments so we can move from code generation into executable Java-side accelerator workflows with JSON performance reports.
 
 ## Topics
 `triton` `babylon` `java` `codegen` `parser` `gpu` `ml-kernels` `python-parser`
@@ -18,6 +21,11 @@ It combines:
 - A Python parser (`org.parsers.python.*`) for reading `.py` sources.
 - A code generator (`org.triton4j.codegen.TritonWriter`) that emits Java methods annotated with `@Reflect` and uses `oracle.code.triton.*`.
 - Tests that validate generated/handwritten kernels against expected Triton IR behavior.
+
+It now also serves as a small experimentation workspace for:
+- TurboQuant quantized attention kernels and reference implementations.
+- CLI and sample benchmarks that emit JSON reports under `build/reports/performance/`.
+- HAT runtime execution tests that run reflected kernels on Java sequential and multithreaded backends.
 
 ## Why Triton
 Triton is a GPU kernel programming model focused on high-performance tensor operations (for example, vector math, matrix multiply, softmax, and fused kernels). It gives low-level control over memory/layout/tiling while keeping kernel authoring more compact than raw CUDA-style code.
@@ -52,10 +60,14 @@ How this relates to TritonParser:
 ## What This Repository Contains
 - `src/main/java/org/parsers/python`: Python lexer/parser and AST model.
 - `src/main/java/org/triton4j/codegen`: Python AST -> Java code generation.
+- `src/main/java/org/triton4j/cli`: CLI entry points for code generation and command-level benchmarking.
+- `src/main/java/org/triton4j/samples/turboquant`: TurboQuant Java sample, benchmark, and Triton kernel entry points.
 - `samples/`: runnable CLI conversion examples and usage guide.
 - `src/test/python`: Sample Triton Python kernels used for generation.
 - `src/test/java/org/triton4j/codegen/test/TritonWriterTest.java`: Example generation flow.
 - `src/test/java/oracle/code/triton/*`: Triton transformation/validation tests.
+- `src/test/java/org/triton4j/codegen/test/HatKernelExecutionTest.java`: HAT vector-add runtime benchmark and report generation.
+- `src/test/java/org/triton4j/samples/turboquant/TurboQuantHatExecutionTest.java`: HAT runtime execution test for fused TurboQuant attention.
 
 ## Prerequisites
 - JDK 25 with Babylon module support (`jdk.incubator.code`).
@@ -270,6 +282,13 @@ Notes:
 - It is a practical integration benchmark for environment-level comparisons.
 - It does not directly launch Triton kernels from Java in-process (current `oracle.code.triton.Triton.*` APIs in this setup are transform-time stubs).
 - If `--report-file` is set, benchmark results are also written as JSON.
+- The default example report path is `build/reports/performance/cli-benchmark.json`.
+
+The JSON report includes:
+- timestamp, workdir, warmup and iteration counts,
+- the exact GPU/CPU commands that were run,
+- optional environment overrides passed with `--env`,
+- per-iteration timings plus min/max/avg summary values.
 
 ### 7) Test in-process kernel execution with HAT backends
 Run the kernel execution benchmark test:
@@ -286,6 +305,52 @@ What it does:
 - Validates output correctness and prints average runtime + speedup (`seq/mt`).
 - Writes a JSON report to:
   - `build/reports/performance/hat-kernel-execution.json`
+
+### 8) Run the TurboQuant sample and benchmark
+TurboQuant lives under `src/main/java/org/triton4j/samples/turboquant/` and gives this project a concrete quantized-attention workload to generate, benchmark, and validate.
+
+Main components:
+- `TurboQuantCore`: pure Java quantization, dequantization, fused score path, and fused attention path.
+- `TurboQuantTritonKernels`: Triton4j kernel entry points that represent the fused quantized attention kernels.
+- `TurboQuantSample`: runnable sample that prints compression ratio, fused-vs-reference quality, and benchmark summary.
+- `TurboQuantAttentionBenchmark`: benchmark runner that compares fused, dequantized-reference, and original-key paths.
+- `TurboQuantBenchmarkCli`: benchmark-only CLI entry point used by the Gradle task.
+
+Run the sample:
+
+```bash
+./gradlew runTurboQuantSample
+```
+
+Run the benchmark export task:
+
+```bash
+./gradlew benchmarkTurboQuant
+```
+
+Override benchmark parameters:
+
+```bash
+./gradlew benchmarkTurboQuant -PturboQuantHeadDim=128 -PturboQuantSeqLen=512 -PturboQuantBits=3 -PturboQuantWarmupRuns=2 -PturboQuantMeasuredRuns=12 -PturboQuantSeed=7
+```
+
+TurboQuant benchmark report:
+- `build/reports/performance/turboquant-attention.json`
+
+### 9) Validate TurboQuant on the HAT runtime
+The project now includes a HAT runtime test that executes the fused TurboQuant attention path through `hat.Accelerator.compute(...)` on both Java HAT backends.
+
+Run it with:
+
+```bash
+./gradlew test --tests org.triton4j.samples.turboquant.TurboQuantHatExecutionTest
+```
+
+What it verifies:
+- reflected HAT kernel dispatch works for the fused TurboQuant attention computation,
+- sequential and multithreaded Java backends both stay close to the Java fused reference,
+- performance data is written to:
+  - `build/reports/performance/turboquant-hat-attention.json`
 
 ## Troubleshooting
 - `Could not resolve oracle.code:triton:1.0-SNAPSHOT`

@@ -15,5 +15,11 @@
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-25/"/>
 	<classpathentry kind="con" path="org.eclipse.buildship.core.gradleclasspathcontainer"/>
+	<classpathentry kind="lib" path="/Users/roman/.gradle/caches/modules-2/files-2.1/org.graalvm.python/python/25.0.2/dcd2acfaac7bbdc73856fc31c3beca0db62a624d/python-25.0.2.pom"/>
+	<classpathentry kind="lib" path="/Users/roman/.m2/repository/oracle/code/hat-backend-java-seq/1.0/hat-backend-java-seq-1.0.jar"/>
+	<classpathentry kind="lib" path="/Users/roman/.m2/repository/oracle/code/hat-backend-java-mt/1.0/hat-backend-java-mt-1.0.jar"/>
+	<classpathentry kind="lib" path="/Users/roman/.m2/repository/oracle/code/hat-core/1.0/hat-core-1.0.jar"/>
+	<classpathentry kind="lib" path="/Users/roman/.m2/repository/oracle/code/hat-optkl/1.0/hat-optkl-1.0.jar"/>
+	<classpathentry kind="lib" path="/Users/roman/Projects/eclipse-workspace/TritonParser/build/libs/dscope-triton-0.1.0.jar"/>
 	<classpathentry kind="output" path="bin/default"/>
 </classpath>

@@ -178,6 +178,38 @@ tasks.register('metalBuild') {
     dependsOn(tasks.named('build'))
 }
 
+tasks.register('runTurboQuantSample', JavaExec) {
+    group = 'application'
+    description = 'Run the TurboQuant Java and Triton4j sample.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'org.triton4j.samples.turboquant.TurboQuantSample'
+    jvmArgs '--add-modules', 'jdk.incubator.code'
+}
+
+tasks.register('benchmarkTurboQuant', JavaExec) {
+    group = 'application'
+    description = 'Run the TurboQuant benchmark and export a JSON report.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'org.triton4j.samples.turboquant.TurboQuantBenchmarkCli'
+    jvmArgs '--add-modules', 'jdk.incubator.code'
+    doFirst {
+        def argPairs = [
+            ['turboQuantHeadDim', '--head-dim'],
+            ['turboQuantSeqLen', '--seq-len'],
+            ['turboQuantBits', '--bits'],
+            ['turboQuantWarmupRuns', '--warmup-runs'],
+            ['turboQuantMeasuredRuns', '--measured-runs'],
+            ['turboQuantSeed', '--seed']
+        ]
+        args = []
+        argPairs.each { pair ->
+            if (project.hasProperty(pair[0])) {
+                args pair[1], project.property(pair[0]).toString()
+            }
+        }
+    }
+}
+
 dependencies {	
 	implementation group: 'info.picocli', name: 'picocli', version: '4.7.7'
 	

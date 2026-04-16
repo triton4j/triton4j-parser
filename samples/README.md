@@ -112,3 +112,80 @@ Run:
 ```bash
 ./gradlew :samples-plugin-build:clean :samples-plugin-build:build
 ```
+
+## TurboQuant Java Sample
+
+This repository now also includes a Java-side TurboQuant sample under:
+
+```text
+src/main/java/org/triton4j/samples/turboquant/
+```
+
+What it includes:
+- `TurboQuantCore`: pure Java quantize/dequantize implementation.
+- `TurboQuantAttentionBenchmark`: Java attention microbenchmark with JSON report output.
+- `TurboQuantTritonKernels`: Triton4j fused gather-dot and fused attention kernel entry points.
+- `TurboQuantSample`: a runnable demo that compares fused-score math against dequantized reference scores.
+- `TurboQuantBenchmarkCli`: a benchmark-only CLI for exporting JSON reports with configurable parameters.
+
+This sample is useful because it connects several parts of the project in one place:
+- pure Java reference math,
+- Triton4j kernel entry points,
+- benchmark report generation,
+- HAT runtime execution tests against the same fused attention workload.
+
+Run it with:
+
+```bash
+./gradlew runTurboQuantSample
+```
+
+The sample prints:
+- fused vs dequantized quality metrics,
+- theoretical compression ratio,
+- benchmark timing summary,
+- the generated report path.
+
+Run the benchmark-only export task with defaults:
+
+```bash
+./gradlew benchmarkTurboQuant
+```
+
+Default report output:
+- `build/reports/performance/turboquant-attention.json`
+
+Run it with custom parameters:
+
+```bash
+./gradlew benchmarkTurboQuant -PturboQuantHeadDim=128 -PturboQuantSeqLen=512 -PturboQuantBits=3 -PturboQuantWarmupRuns=2 -PturboQuantMeasuredRuns=12 -PturboQuantSeed=7
+```
+
+Or run just the verification test:
+
+```bash
+./gradlew test --tests org.triton4j.samples.turboquant.TurboQuantSampleTest
+```
+
+Additional JUnit coverage:
+- `org.triton4j.samples.turboquant.TurboQuantAttentionBenchmarkTest`
+- `org.triton4j.samples.turboquant.TurboQuantTritonKernelTest`
+- `org.triton4j.samples.turboquant.TurboQuantHatExecutionTest`
+
+## TurboQuant HAT Runtime Validation
+
+The TurboQuant sample also has a HAT runtime execution test that runs reflected fused attention on:
+- `hat.backend.java.JavaSequentialBackend`
+- `hat.backend.java.JavaMultiThreadedBackend`
+
+Run it with:
+
+```bash
+./gradlew test --tests org.triton4j.samples.turboquant.TurboQuantHatExecutionTest
+```
+
+What it does:
+- packs TurboQuant quantized keys and values into HAT buffers,
+- dispatches the fused attention kernel through `hat.Accelerator.compute(...)`,
+- compares HAT output against the Java fused TurboQuant reference,
+- writes a report to `build/reports/performance/turboquant-hat-attention.json`.
