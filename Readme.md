@@ -352,6 +352,24 @@ What it verifies:
 - performance data is written to:
   - `build/reports/performance/turboquant-hat-attention.json`
 
+### 10) Compare TurboQuant Java results with GraalPy
+There is also a GraalPy-based parity test for the TurboQuant sample math.
+
+Run it with:
+
+```bash
+./gradlew test --tests org.triton4j.samples.turboquant.TurboQuantGraalPyParityTest
+```
+
+What it verifies:
+- Java TurboQuant fused score output matches a pure-Python reference executed in GraalPy,
+- Java TurboQuant fused attention output matches the same GraalPy reference,
+- the Triton4j TurboQuant kernel entry points remain annotated with `@Reflect`.
+
+Note:
+- this test does not execute the original PyTorch/Triton Python sources directly,
+- instead it uses a GraalPy-compatible pure-Python reference because the current GraalPy setup in this project does not provide `torch` and `triton`.
+
 ## Troubleshooting
 - `Could not resolve oracle.code:triton:1.0-SNAPSHOT`
   - Ensure the artifact exists in `~/.m2/repository/oracle/code/triton/1.0-SNAPSHOT`.

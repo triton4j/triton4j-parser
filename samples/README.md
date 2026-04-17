@@ -171,6 +171,25 @@ Additional JUnit coverage:
 - `org.triton4j.samples.turboquant.TurboQuantAttentionBenchmarkTest`
 - `org.triton4j.samples.turboquant.TurboQuantTritonKernelTest`
 - `org.triton4j.samples.turboquant.TurboQuantHatExecutionTest`
+- `org.triton4j.samples.turboquant.TurboQuantGraalPyParityTest`
+
+## TurboQuant GraalPy Parity
+
+There is also a GraalPy parity test for the TurboQuant sample that compares Java fused math against a pure-Python reference running inside GraalPy.
+
+Run it with:
+
+```bash
+./gradlew test --tests org.triton4j.samples.turboquant.TurboQuantGraalPyParityTest
+```
+
+What it does:
+- reuses deterministic TurboQuant sample inputs,
+- compares fused scores and fused attention between Java and GraalPy,
+- checks that `TurboQuantTritonKernels` still expose reflected Triton entry points.
+
+Note:
+- this is a GraalPy-compatible Python reference, not a direct execution of the original PyTorch/Triton Python files.
 
 ## TurboQuant HAT Runtime Validation
 
