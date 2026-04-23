@@ -134,6 +134,11 @@ This sample is useful because it connects several parts of the project in one pl
 - benchmark report generation,
 - HAT runtime execution tests against the same fused attention workload.
 
+Current benchmark takeaway:
+- TurboQuant gives strong compression and high cosine similarity,
+- but the present Java fused implementation is still slower than the traditional Java baseline on CPU for the tested sizes,
+- so these samples currently demonstrate correctness, compression, and scaling behavior more than raw CPU acceleration.
+
 Run it with:
 
 ```bash
@@ -172,6 +177,12 @@ Additional JUnit coverage:
 - `org.triton4j.samples.turboquant.TurboQuantTritonKernelTest`
 - `org.triton4j.samples.turboquant.TurboQuantHatExecutionTest`
 - `org.triton4j.samples.turboquant.TurboQuantGraalPyParityTest`
+- `org.triton4j.samples.turboquant.TurboQuantComparisonTest`
+
+The benchmark-oriented tests now cover:
+- report generation for the benchmark JSON output,
+- a size sweep over multiple `(headDim, seqLen, bits)` configurations,
+- comparison of fused TurboQuant output against the traditional Java baseline.
 
 ## TurboQuant GraalPy Parity
 

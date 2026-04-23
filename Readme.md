@@ -316,6 +316,11 @@ Main components:
 - `TurboQuantAttentionBenchmark`: benchmark runner that compares fused, dequantized-reference, and original-key paths.
 - `TurboQuantBenchmarkCli`: benchmark-only CLI entry point used by the Gradle task.
 
+Current takeaway from the Java benchmark path:
+- TurboQuant preserves output quality well and compresses aggressively,
+- but the current CPU Java fused implementation is not yet faster than the traditional Java baseline,
+- so the most credible path to performance upside is still a backend/runtime implementation that can exploit GPU execution.
+
 Run the sample:
 
 ```bash
@@ -337,6 +342,12 @@ Override benchmark parameters:
 TurboQuant benchmark report:
 - `build/reports/performance/turboquant-attention.json`
 
+Related JUnit coverage:
+- `org.triton4j.samples.turboquant.TurboQuantAttentionBenchmarkTest`
+  - validates report generation and runs a small size sweep across multiple `(headDim, seqLen, bits)` configurations.
+- `org.triton4j.samples.turboquant.TurboQuantComparisonTest`
+  - compares TurboQuant fused scores and attention against the traditional Java baseline across multiple input sizes.
+
 ### 9) Validate TurboQuant on the HAT runtime
 The project now includes a HAT runtime test that executes the fused TurboQuant attention path through `hat.Accelerator.compute(...)` on both Java HAT backends.
 
@@ -351,6 +362,10 @@ What it verifies:
 - sequential and multithreaded Java backends both stay close to the Java fused reference,
 - performance data is written to:
   - `build/reports/performance/turboquant-hat-attention.json`
+
+Note:
+- this validates HAT execution correctness and backend behavior,
+- it is not yet evidence of a GPU speedup for TurboQuant in this repository.
 
 ### 10) Compare TurboQuant Java results with GraalPy
 There is also a GraalPy-based parity test for the TurboQuant sample math.
