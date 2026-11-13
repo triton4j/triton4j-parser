@@ -84,6 +84,16 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew clean build
 ```
 
+For Babylon JDK 28, run Gradle with the older Babylon JDK and select JDK 28 for Java compilation and tests. Gradle 9.3's Groovy compiler cannot run on JDK 28 directly:
+
+```bash
+export JAVA_HOME=$HOME/Java/babylon/build/macosx-aarch64-server-release/images/jdk
+export TRITON_JDK_HOME=$HOME/Java/babylon/build/macosx-aarch64-server-release-jdk28/images/jdk
+./gradlew :test
+```
+
+This requires `oracle.code:triton:1.0-SNAPSHOT` and the HAT artifacts in Maven local to be rebuilt with JDK 28. The generated-kernel lowering test passes with that setup; the two HAT Java-backend execution tests remain blocked by the current Babylon backends.
+
 ### Convenience: pin Babylon JDK for this repo
 Add this helper to your shell profile (`~/.zshrc`) so you can switch quickly when working in this project:
 
@@ -186,7 +196,7 @@ Generate from a directory recursively:
 Run from the built jar:
 
 ```bash
-java --add-modules jdk.incubator.code -jar build/libs/dscope-triton-0.1.0.jar generate tutorials_python/01-vector-add.py -o build/generated-cli -p org.triton4j.triton.test
+java --add-modules jdk.incubator.code -jar build/libs/dscope-triton-0.2.0.jar generate tutorials_python/01-vector-add.py -o build/generated-cli -p org.triton4j.triton.test
 ```
 
 ### 2) Gradle plugin-based generation

@@ -3,8 +3,8 @@ plugins {
     id 'org.triton4j.codegen'
 }
 
-group = 'io.dscope.samples'
-version = '0.1.0'
+group = 'org.triton4j.samples'
+version = '0.2.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_25
@@ -23,6 +23,23 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.addAll(['--add-modules', 'jdk.incubator.code'])
+}
+
+def tritonJdkHome = System.getenv('TRITON_JDK_HOME')
+if (tritonJdkHome) {
+    java {
+        sourceCompatibility = JavaVersion.VERSION_28
+        targetCompatibility = JavaVersion.VERSION_28
+    }
+    tasks.withType(JavaCompile).configureEach {
+        options.fork = true
+        options.forkOptions.executable = file("${tritonJdkHome}/bin/javac").absolutePath
+        options.compilerArgs.add('--enable-preview')
+    }
+    tasks.withType(Test).configureEach {
+        executable = file("${tritonJdkHome}/bin/java").absolutePath
+        jvmArgs '--enable-preview'
+    }
 }
 
 tritonCodegen {

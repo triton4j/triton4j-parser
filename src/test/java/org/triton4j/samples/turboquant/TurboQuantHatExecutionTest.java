@@ -39,7 +39,6 @@ public class TurboQuantHatExecutionTest {
 
 	@Reflect
 	public static void fusedAttentionOutputKernel(
-			@RO KernelContext kc,
 			@RO F32Array rotatedQuery,
 			@RO S32Array keyIndices,
 			@RO F32Array keyNorms,
@@ -49,7 +48,7 @@ public class TurboQuantHatExecutionTest {
 			int seqLen,
 			int headDim,
 			float scale) {
-		int outputIndex = kc.gix;
+		int outputIndex = KernelContext.GIX();
 		if (outputIndex >= headDim)
 			return;
 
@@ -98,7 +97,7 @@ public class TurboQuantHatExecutionTest {
 			float scale) {
 		cc.dispatchKernel(
 				NDRange.of1D(headDim),
-				kc -> fusedAttentionOutputKernel(kc, rotatedQuery, keyIndices, keyNorms, centroids, values, out, seqLen,
+				() -> fusedAttentionOutputKernel(rotatedQuery, keyIndices, keyNorms, centroids, values, out, seqLen,
 						headDim, scale));
 	}
 

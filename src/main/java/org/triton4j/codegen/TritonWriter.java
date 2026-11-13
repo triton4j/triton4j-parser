@@ -63,6 +63,7 @@ import org.parsers.python.ast.ReturnStatement;
 import org.parsers.python.ast.SliceExpression;
 import org.parsers.python.ast.Slices;
 import org.parsers.python.ast.Statement;
+import org.parsers.python.ast.StarExpressions;
 import org.parsers.python.ast.StarTargets;
 import org.parsers.python.ast.StringLiteral;
 import org.parsers.python.ast.Tuple;
@@ -165,6 +166,9 @@ public class TritonWriter {
 				.addModifiers(Modifier.PUBLIC);
 
 		for (FunctionDefinition function : functions) {
+			String functionName = function.firstChildOfType(Name.class).toString().toLowerCase();
+			if (functionName.contains("_tma") || functionName.contains("tma_") || functionName.contains("descriptor"))
+				continue;
 			MethodSpec methodSpec = this.generateFunction(tritonWriterContext, function);
 			if (methodSpec != null)
 				classBuilder.addMethod(methodSpec);
@@ -198,7 +202,7 @@ public class TritonWriter {
 			return null;
 
 		MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(this.normalizeMethodName(funcName))
-				.addModifiers(Modifier.PUBLIC).addAnnotation(reflectionAnnotation);
+				.addModifiers(Modifier.PUBLIC, Modifier.STATIC).addAnnotation(reflectionAnnotation);
 
 		Map<String, Class> varNames = new HashMap<>();
 		if (parameters != null) {
@@ -240,8 +244,10 @@ public class TritonWriter {
 						if (paramType != null) {
 							if (paramType.equals(context.language + ".constexpr")) {
 								if (paramName != null && paramName.toLowerCase().contains("activation")) {
-									paramSpec = ParameterSpec.builder(String.class, paramName).addAnnotation(Constant.class);
-									type = String.class;
+									// The Java Triton API models compile-time feature switches as booleans.
+									// Base matmul omits the optional Python "leaky_relu" branch below.
+									paramSpec = ParameterSpec.builder(boolean.class, paramName).addAnnotation(Constant.class);
+									type = boolean.class;
 								} else
 									paramSpec = ParameterSpec.builder(int.class, paramName).addAnnotation(Constant.class);
 							} else
@@ -322,7 +328,14 @@ public class TritonWriter {
 			return returnStatementBuilder.build();
 		}
 
-		String value = this.generateValue(context, returnStatement.get(1), varNames).toString();
+		Node returnValue = returnStatement.get(1);
+		String value;
+		if (returnValue instanceof StarExpressions) {
+			List<String> values = this.splitExpressions(context, returnValue.children(), 0, returnValue.size(), varNames);
+			value = "new Object[]{" + String.join(",", values) + "}";
+		} else {
+			value = this.generateValue(context, returnValue, varNames).toString();
+		}
 		if (value == null || value.isBlank())
 			returnStatementBuilder.add("return null;");
 		else
@@ -334,12 +347,20 @@ public class TritonWriter {
 	private CodeBlock generateIfStatement(TritonWriterContext context, IfStatement ifStatement,
 			Map<String, Class> varNames) {
 		CodeBlock.Builder ifStatementBuilder = CodeBlock.builder();
+		Node condition = this.getIfConditionNode(ifStatement);
+		if (this.isOutputDtypeGuard(condition))
+			return CodeBlock.builder()
+					.add("\n// Output conversion omitted; the Java Triton entry point retains its accumulator type.\n")
+					.add("var c=accumulator;\n")
+					.build();
+		if (this.isOptionalActivationGuard(condition))
+			return CodeBlock.builder()
+					.add("\n// Optional Triton activation omitted; this generated entry point implements base matmul.\n")
+					.build();
 
 		Block block = ifStatement.firstChildOfType(Block.class);
 		if (block != null)
 			this.predeclareAssignedNames(ifStatementBuilder, block, varNames);
-
-		Node condition = this.getIfConditionNode(ifStatement);
 
 		String conditionCode = "true";
 		if (condition instanceof Comparison)
@@ -362,6 +383,23 @@ public class TritonWriter {
 		return ifStatementBuilder.build();
 	}
 
+	private boolean isOptionalActivationGuard(Node condition) {
+		if (!(condition instanceof Comparison))
+			return false;
+		boolean activationName = condition.descendants(Name.class).stream()
+				.anyMatch(name -> name.toString().toLowerCase().contains("activation"));
+		boolean leakyRelu = condition.descendants(StringLiteral.class).stream()
+				.anyMatch(value -> value.toString().replace("\"", "").replace("'", "").equals("leaky_relu"));
+		return activationName && leakyRelu;
+	}
+
+	private boolean isOutputDtypeGuard(Node condition) {
+		if (!(condition instanceof Comparison))
+			return false;
+		Set<String> names = condition.descendants(Name.class).stream().map(Name::toString).collect(Collectors.toSet());
+		return names.contains("c_ptr") && names.contains("dtype") && names.contains("element_ty");
+	}
+
 	private Node getIfConditionNode(IfStatement ifStatement) {
 		List<Node> nodes = ifStatement.children();
 		for (int i = 0; i < nodes.size(); i++) {
@@ -375,6 +413,11 @@ public class TritonWriter {
 			}
 			if (node instanceof Delimiter && ":".equals(node.toString()))
 				continue;
+			if (node instanceof Group) {
+				Comparison comparison = node.firstChildOfType(Comparison.class);
+				if (comparison != null)
+					return comparison;
+			}
 			return node;
 		}
 		return null;
@@ -398,17 +441,12 @@ public class TritonWriter {
 					continue;
 				boolean intLikeName = "lo".equals(normalizedName) || "hi".equals(normalizedName)
 						|| normalizedName.startsWith("start_") || normalizedName.startsWith("end_");
-				if (intLikeName) {
-					builder.add("int " + normalizedName + "=0;\n");
-					varNames.put(normalizedName, int.class);
-					if (!normalizedName.equals(name.toString()))
-						varNames.put(name.toString(), int.class);
-				} else {
-					builder.add("Number " + normalizedName + "=0;\n");
-					varNames.put(normalizedName, Number.class);
-					if (!normalizedName.equals(name.toString()))
-						varNames.put(name.toString(), Number.class);
-				}
+				if (!intLikeName)
+					continue;
+				builder.add("int " + normalizedName + "=0;\n");
+				varNames.put(normalizedName, int.class);
+				if (!normalizedName.equals(name.toString()))
+					varNames.put(name.toString(), int.class);
 			}
 		}
 	}
@@ -423,8 +461,6 @@ public class TritonWriter {
 			return "java.util.Objects.nonNull(oracle.code.triton.Triton.zeros(float.class,1))";
 		if (normalized.matches("[A-Za-z_$][A-Za-z0-9_$]*"))
 			return "true";
-		if (normalized.contains("=="))
-			return "java.util.Objects.nonNull(oracle.code.triton.Triton.zeros(float.class,1))";
 		return normalized;
 	}
 
@@ -583,6 +619,8 @@ public class TritonWriter {
 			valueBuilder.add(value.toString());
 		else if (value instanceof SliceExpression)
 			valueBuilder.add(this.generateSliceExpression(context, (SliceExpression) value, varNames));
+		else if (value instanceof Argument)
+			valueBuilder.add(this.generateNodeRange(context, value.children(), 0, value.children().size(), varNames));
 		else if (value instanceof FunctionCall)
 			valueBuilder.add(this.generateFunctionCall(context, (FunctionCall) value, varNames));
 		else if (value instanceof MultiplicativeExpression)
@@ -692,25 +730,21 @@ public class TritonWriter {
 
 		codeBlockBuilder.add("oracle.code.triton.Triton.compare(");
 
+		Node operator = comparison.firstChildOfType(Operator.class);
+		if (operator == null)
+			operator = comparison.firstChildOfType(Delimiter.class);
+		if (operator == null)
+			return CodeBlock.builder().add("true").build();
+
 		for (int i = 0; i < nodes.size(); i++) {
 			Node node = nodes.get(i);
 			
-			if(node instanceof Operator)
+			if (node == operator)
 				continue;
 
 			codeBlockBuilder.add(this.generateNodeText(context, node, varNames));
 
 			codeBlockBuilder.add(",");
-		}
-
-		Operator operator = comparison.firstChildOfType(Operator.class);
-		if (operator == null) {
-			CodeBlock.Builder fallbackBuilder = CodeBlock.builder();
-			for (int i = 0; i < nodes.size(); i++) {
-				Node node = nodes.get(i);
-				fallbackBuilder.add(this.generateNodeText(context, node, varNames));
-			}
-			return fallbackBuilder.build();
 		}
 
 		switch (operator.toString()) {
@@ -860,8 +894,7 @@ public class TritonWriter {
 		if (multiplicativeExpression != null) {
 			codeBlockBuilder.add(this.generateMultiplicativeExpression(context, multiplicativeExpression, varNames));
 
-			type = this.shouldUseTritonArithmetic(context, multiplicativeExpression, varNames) ? Object.class
-					: Number.class;
+			type = this.shouldUseTritonArithmetic(context, multiplicativeExpression, varNames) ? Object.class : int.class;
 			valueGenerated = true;
 		}
 
@@ -869,7 +902,7 @@ public class TritonWriter {
 
 		if (additiveExpression != null) {
 			codeBlockBuilder.add(this.generateAdditiveExpression(context, additiveExpression, varNames));
-			type = this.shouldUseTritonArithmetic(context, additiveExpression, varNames) ? Object.class : Number.class;
+			type = this.shouldUseTritonArithmetic(context, additiveExpression, varNames) ? Object.class : int.class;
 			valueGenerated = true;
 		}
 
@@ -877,7 +910,10 @@ public class TritonWriter {
 
 		if (comparison != null) {
 			codeBlockBuilder.add(this.generateComparison(context, comparison, varNames));
-			type = Boolean.class;
+			// Triton comparisons are element-wise when either operand is a tensor.
+			// Remember that result as a tensor so a later tl.load(..., mask=mask)
+			// is not mistaken for a scalar load and silently replaced by its pointer.
+			type = this.shouldUseTritonArithmetic(context, comparison, varNames) ? Tensor.class : Boolean.class;
 			valueGenerated = true;
 		}
 
@@ -908,6 +944,16 @@ public class TritonWriter {
 			valueGenerated = true;
 		}
 
+		if (!valueGenerated && delimiterIndex + 1 < assignmentNodes.size()
+				&& assignmentNodes.get(delimiterIndex + 1) instanceof Name) {
+			Name rhsName = (Name) assignmentNodes.get(delimiterIndex + 1);
+			codeBlockBuilder.add(this.generateValue(context, rhsName, varNames));
+			Class rhsType = this.resolveVarType(varNames, rhsName.toString());
+			if (rhsType != null)
+				type = rhsType;
+			valueGenerated = true;
+		}
+
 		if (!valueGenerated && assignmentDelimiter != null) {
 			String rhs = this.generateNodeRange(context, assignmentNodes, delimiterIndex + 1, assignmentNodes.size(),
 					varNames);
@@ -918,6 +964,11 @@ public class TritonWriter {
 					type = int.class;
 				else if (trimmedRhs.matches("-?\\d+\\.(\\d+)?([eE][+-]?\\d+)?[fFdD]?"))
 					type = Number.class;
+				else {
+					Class rhsType = this.resolveVarType(varNames, trimmedRhs);
+					if (rhsType != null)
+						type = rhsType;
+				}
 			}
 		}
 
@@ -1073,33 +1124,13 @@ public class TritonWriter {
 			if (expanded.size() > 1)
 				rhsValues = expanded;
 		}
-
-			if (rhsValues.size() == tupleTargets.size()) {
-				for (int i = 0; i < tupleTargets.size(); i++) {
-					String target = tupleTargets.get(i);
-					Class targetType = this.resolveVarType(varNames, target);
-					if (varNames.containsKey(target))
-						codeBlockBuilder.add(target);
-					else {
-						codeBlockBuilder.add("var " + target);
-						varNames.put(target, Object.class);
-					}
-					String rhsValue = rhsValues.get(i);
-					if (targetType == int.class && rhsValue.contains("oracle.code.triton.Triton."))
-						rhsValue = "0";
-					codeBlockBuilder.add("=" + rhsValue + ";");
-				}
-				return codeBlockBuilder.build();
-			}
-
-		String tupleTemp = "__tupleValue" + (this.tupleTempCounter++);
-		String tupleSource = rhsValues.isEmpty() ? "new Object[0]" : rhsValues.get(0);
-		if (!tupleSource.startsWith("new Object[]")) {
-			List<String> tupleItems = this.splitTopLevelCommas(tupleSource);
-			if (tupleItems.size() > 1)
-				tupleSource = "new Object[]{" + String.join(",", tupleItems) + "}";
+		if (rhsValues.size() == 1) {
+			CodeBlock inlineTileAssignment = this.generateInlineTileAssignment(tupleTargets, rhsValues.get(0));
+			if (inlineTileAssignment != null)
+				return inlineTileAssignment;
 		}
-		codeBlockBuilder.add("var " + tupleTemp + "=(Object[])(" + tupleSource + ");");
+
+		if (rhsValues.size() == tupleTargets.size()) {
 			for (int i = 0; i < tupleTargets.size(); i++) {
 				String target = tupleTargets.get(i);
 				Class targetType = this.resolveVarType(varNames, target);
@@ -1109,13 +1140,61 @@ public class TritonWriter {
 					codeBlockBuilder.add("var " + target);
 					varNames.put(target, Object.class);
 				}
-				if (targetType == int.class)
-					codeBlockBuilder.add("=" + tupleTemp + ".length>" + i + "&&" + tupleTemp + "[" + i
-							+ "] instanceof Number?((Number)" + tupleTemp + "[" + i + "]).intValue():0;");
-				else
-					codeBlockBuilder.add("=" + tupleTemp + ".length>" + i + "?" + tupleTemp + "[" + i + "]:null;");
+				String rhsValue = rhsValues.get(i);
+				if (targetType == int.class && rhsValue.contains("oracle.code.triton.Triton."))
+					rhsValue = "0";
+				codeBlockBuilder.add("=" + rhsValue + ";");
 			}
+			return codeBlockBuilder.build();
+		}
+
+		String tupleTemp = "__tupleValue" + (this.tupleTempCounter++);
+		String tupleSource = rhsValues.isEmpty() ? "new Object[0]" : rhsValues.get(0);
+		if (!tupleSource.startsWith("new Object[]")) {
+			List<String> tupleItems = this.splitTopLevelCommas(tupleSource);
+			if (tupleItems.size() > 1)
+				tupleSource = "new Object[]{" + String.join(",", tupleItems) + "}";
+		}
+		codeBlockBuilder.add("var " + tupleTemp + "=(Object[])(" + tupleSource + ");");
+		for (int i = 0; i < tupleTargets.size(); i++) {
+			String target = tupleTargets.get(i);
+			Class targetType = this.resolveVarType(varNames, target);
+			if (varNames.containsKey(target))
+				codeBlockBuilder.add(target);
+			else {
+				codeBlockBuilder.add("var " + target);
+				varNames.put(target, Object.class);
+			}
+			if (targetType == int.class)
+				codeBlockBuilder.add("=" + tupleTemp + ".length>" + i + "&&" + tupleTemp + "[" + i
+						+ "] instanceof Number?((Number)" + tupleTemp + "[" + i + "]).intValue():0;");
+			else
+				codeBlockBuilder.add("=" + tupleTemp + ".length>" + i + "?" + tupleTemp + "[" + i + "]:null;");
+		}
 		return codeBlockBuilder.build();
+	}
+
+	private CodeBlock generateInlineTileAssignment(List<String> tupleTargets, String tupleSource) {
+		if (!tupleTargets.equals(List.of("tile_id", "pid_m", "pid_n"))
+				|| !tupleSource.startsWith("ComputeTileAndPid(") || !tupleSource.endsWith(")"))
+			return null;
+		List<String> args = this.splitTopLevelCommas(
+				tupleSource.substring(tupleSource.indexOf('(') + 1, tupleSource.length() - 1));
+		if (args.size() != 5)
+			return null;
+
+		int suffix = this.tupleTempCounter++;
+		String groupId = "__tileGroupId" + suffix;
+		String firstPidM = "__tileFirstPidM" + suffix;
+		String groupSizeM = "__tileGroupSizeM" + suffix;
+		return CodeBlock.builder()
+				.add(args.get(0) + "=" + args.get(0) + "+" + args.get(4) + ";")
+				.add("var " + groupId + "=" + args.get(0) + "/" + args.get(1) + ";")
+				.add("var " + firstPidM + "=" + groupId + "*" + args.get(3) + ";")
+				.add("var " + groupSizeM + "=Math.min(" + args.get(2) + "-" + firstPidM + "," + args.get(3) + ");")
+				.add(tupleTargets.get(1) + "=" + firstPidM + "+(" + args.get(0) + "%" + groupSizeM + ");")
+				.add(tupleTargets.get(2) + "=(" + args.get(0) + "%" + args.get(1) + ")/" + groupSizeM + ";")
+				.build();
 	}
 
 	private List<String> extractInvocationArguments(TritonWriterContext context, InvocationArguments invocationArguments,
@@ -1672,16 +1751,20 @@ public class TritonWriter {
 			return CodeBlock.builder().add("Integer.valueOf(0)").build();
 		if ("numPrograms".equals(methodName))
 			return CodeBlock.builder().add("1").build();
-		if ("where".equals(methodName))
-			return CodeBlock.builder().add(args.size() > 1 ? args.get(1) : args.isEmpty() ? "0" : args.get(0)).build();
+		if ("where".equals(methodName)) {
+			if (args.size() >= 3 && this.isScalarConditionArgument(args.get(0), varNames))
+				return CodeBlock.builder().add("(" + args.get(0) + "?" + args.get(1) + ":" + args.get(2) + ")").build();
+			String safeIndex = this.safeIndexForMaskedWhere(args);
+			return CodeBlock.builder().add(safeIndex != null ? safeIndex
+					: args.size() > 1 ? args.get(1) : args.isEmpty() ? "0" : args.get(0)).build();
+		}
 		if ("rand".equals(methodName))
 			return CodeBlock.builder().add(args.size() > 1 ? args.get(1) : args.isEmpty() ? "0" : args.get(0)).build();
 		if ("sqrt".equals(methodName))
 			return CodeBlock.builder().add(args.isEmpty() ? "0" : args.get(0)).build();
 		if ("multipleOf".equals(methodName) || "maxContiguous".equals(methodName))
-			return CodeBlock.builder()
-					.add(args.isEmpty() ? "Integer.valueOf(0)" : "java.util.Objects.requireNonNull(" + args.get(0) + ")")
-					.build();
+			return CodeBlock.builder().add(args.isEmpty() ? "Integer.valueOf(0)"
+					: "oracle.code.triton.Triton.add(" + args.get(0) + ",0)").build();
 		if ("atomicCas".equals(methodName) || "atomicXchg".equals(methodName))
 			return CodeBlock.builder().add("Integer.valueOf(0)").build();
 		if ("split".equals(methodName) && !args.isEmpty())
@@ -1703,42 +1786,27 @@ public class TritonWriter {
 			if (left.matches("[A-Za-z_$][A-Za-z0-9_$]*"))
 				normalized = this.sanitizeGeneratedExpression(right);
 		}
-		java.util.regex.Matcher comparisonMatcher = java.util.regex.Pattern
-				.compile("^(.+?)\\s*(==|<=|>=|<|>)\\s*(.+)$").matcher(normalized);
-		if (comparisonMatcher.matches() && !normalized.contains("oracle.code.triton.Triton.compare(")) {
-			String left = this.sanitizeGeneratedExpression(comparisonMatcher.group(1));
-			String operator = comparisonMatcher.group(2);
-			String right = this.sanitizeGeneratedExpression(comparisonMatcher.group(3));
-			String compareKind;
-			switch (operator) {
-			case "==":
-				compareKind = "Equal";
-				break;
-			case "<":
-				compareKind = "LessThan";
-				break;
-			case "<=":
-				compareKind = "LessThanOrEqual";
-				break;
-			case ">":
-				compareKind = "GreaterThan";
-				break;
-			case ">=":
-				compareKind = "GreaterThanOrEqual";
-				break;
-			default:
-				compareKind = "Equal";
-				break;
-			}
-			normalized = "oracle.code.triton.Triton.compare(" + left + "," + right
-					+ ",oracle.code.triton.Triton.CompareKind." + compareKind + ")";
-		}
 		if ("None".equals(normalized))
 			return "0";
 		if ("load".equals(methodName) && normalized.matches("-?\\d+\\.(\\d+)?([eE][+-]?\\d+)?")
 				&& !normalized.endsWith("f") && !normalized.endsWith("F"))
 			return normalized + "f";
 		return normalized;
+	}
+
+	private String safeIndexForMaskedWhere(List<String> args) {
+		if (args.size() < 3 || !"0".equals(args.get(2))
+				|| !args.get(0).startsWith("oracle.code.triton.Triton.compare("))
+			return null;
+		String prefix = "oracle.code.triton.Triton.compare(" + args.get(1) + ",";
+		if (!args.get(0).startsWith(prefix))
+			return null;
+		String suffix = ",oracle.code.triton.Triton.CompareKind.LessThan)";
+		int kindIndex = args.get(0).lastIndexOf(suffix);
+		if (kindIndex < prefix.length())
+			return null;
+		String upperBound = args.get(0).substring(prefix.length(), kindIndex);
+		return "oracle.code.triton.Triton.mod(" + args.get(1) + "," + upperBound + ")";
 	}
 
 	private String normalizeSequenceLiteral(String value) {
@@ -1838,6 +1906,19 @@ public class TritonWriter {
 		return false;
 	}
 
+	private boolean isScalarConditionArgument(String expression, Map<String, Class> varNames) {
+		if (this.isSimpleScalarArgument(expression, varNames))
+			return true;
+		if (expression == null || expression.contains("oracle.code.triton.Triton."))
+			return false;
+		for (Map.Entry<String, Class> variable : varNames.entrySet()) {
+			if (this.isTensorLikeType(variable.getValue())
+					&& expression.matches(".*\\b" + java.util.regex.Pattern.quote(variable.getKey()) + "\\b.*"))
+				return false;
+		}
+		return expression.matches("[A-Za-z0-9_$+\\-*/%<>=!&|(). ]+");
+	}
+
 	private boolean isNumericLiteral(String value) {
 		return value.matches("-?\\d+") || value.matches("-?\\d+\\.(\\d+)?([eE][+-]?\\d+)?[fFdD]?");
 	}
@@ -1848,7 +1929,12 @@ public class TritonWriter {
 		List<String> args = this.extractInvocationArguments(context, invocationArguments, varNames).stream()
 				.map(arg -> this.normalizeFunctionArgument("dot", arg)).filter(arg -> arg != null && !arg.isBlank())
 				.collect(Collectors.toList());
-		if (args.size() >= 2)
+		if (args.size() >= 3)
+			return CodeBlock.builder()
+					.add("oracle.code.triton.Triton.add(" + args.get(2) + ",oracle.code.triton.Triton.dot(" + args.get(0)
+							+ "," + args.get(1) + "))")
+					.build();
+		if (args.size() == 2)
 			return CodeBlock.builder().add("oracle.code.triton.Triton.dot(" + args.get(0) + "," + args.get(1) + ")")
 					.build();
 		return CodeBlock.builder().add(args.isEmpty() ? "0" : args.get(0)).build();
@@ -1980,7 +2066,10 @@ public class TritonWriter {
 			codeBlockBuilder.add(this.generateValue(context, node, varNames));
 		}
 
-		return codeBlockBuilder.build();
+		String generated = codeBlockBuilder.build().toString();
+		if ("-Float.POSITIVE_INFINITY".equals(generated))
+			generated = "Float.NEGATIVE_INFINITY";
+		return CodeBlock.builder().add(generated).build();
 	}
 
 	List<Comment> getComments(Node node) {

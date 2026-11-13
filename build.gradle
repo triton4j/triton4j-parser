@@ -14,8 +14,8 @@ plugins {
 }
 
 
-group 'io.dscope'
-version '0.1.0'
+group 'org.triton4j'
+version '0.2.0'
 def cliMainClass = 'org.triton4j.cli.TritonParserCli'
 
 java {
@@ -45,6 +45,25 @@ def internalCompilerExports = [
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.addAll(internalCompilerExports)
+}
+
+// Gradle 9.3's embedded Groovy cannot run on JDK 28 yet. Run Gradle on a
+// supported JDK and set TRITON_JDK_HOME to compile and test with Babylon 28.
+def tritonJdkHome = System.getenv('TRITON_JDK_HOME')
+if (tritonJdkHome) {
+    java {
+        sourceCompatibility = JavaVersion.VERSION_28
+        targetCompatibility = JavaVersion.VERSION_28
+    }
+    tasks.withType(JavaCompile).configureEach {
+        options.fork = true
+        options.forkOptions.executable = file("${tritonJdkHome}/bin/javac").absolutePath
+        options.compilerArgs.add('--enable-preview')
+    }
+    tasks.withType(Test).configureEach {
+        executable = file("${tritonJdkHome}/bin/java").absolutePath
+        jvmArgs '--enable-preview'
+    }
 }
 
 repositories {

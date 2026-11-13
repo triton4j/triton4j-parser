@@ -33,7 +33,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
-import jdk.incubator.code.TypeElement;
+import jdk.incubator.code.CodeType;
 import jdk.incubator.code.Op;
 import jdk.incubator.code.dialect.core.CoreOp;
 import jdk.incubator.code.extern.DialectFactory;
@@ -76,7 +76,7 @@ public class TritonTestExtension implements ParameterResolver {
             this.javaKernelName = javaKernelName;
         }
 
-        public void test(List<? extends TypeElement> argTypes) {
+        public void test(List<? extends CodeType> argTypes) {
             Optional<Method> om = Stream.of(testClass.getDeclaredMethods())
                     .filter(m -> m.getName().equals(javaKernelName))
                     .filter(m -> m.getAnnotation(Reflect.class) != null)
@@ -111,13 +111,13 @@ public class TritonTestExtension implements ParameterResolver {
                             .andThen(CoreOp.CORE_OP_FACTORY),
                     TritonOps.TYPE_FACTORY);
 
-            return (TritonOps.ModuleOp) OpParser.fromString(
+            return (TritonOps.ModuleOp) OpParser.fromText(
                     testDialectFactory,
                     tcm.value()).get(0);
         }
 
         void test(CoreOp.FuncOp javaKernel,
-                  List<? extends TypeElement> argTypes,
+                  List<? extends CodeType> argTypes,
                   TritonOps.ModuleOp expectedTritonKernel,
                   boolean hasComparableExpected,
                   boolean doSSA) {

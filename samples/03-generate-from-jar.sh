@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 OUT_DIR="build/samples/jar"
 PACKAGE_NAME="org.triton4j.triton.test"
-JAR_PATH="build/libs/dscope-triton-0.1.0.jar"
+JAR_PATH="build/libs/dscope-triton-0.2.0.jar"
 
 mkdir -p "$OUT_DIR"
 

@@ -34,14 +34,15 @@ public class HatKernelExecutionTest {
 	private static final Path REPORT_FILE = REPORT_DIR.resolve("hat-kernel-execution.json");
 
 	@Reflect
-	public static void vectorAddKernel(@RO KernelContext kc, @RO S32Array left, @RO S32Array right, @WO S32Array out) {
-		if (kc.gix < left.length())
-			out.array(kc.gix, left.array(kc.gix) + right.array(kc.gix));
+	public static void vectorAddKernel(@RO S32Array left, @RO S32Array right, @WO S32Array out) {
+		int index = KernelContext.GIX();
+		if (index < left.length())
+			out.array(index, left.array(index) + right.array(index));
 	}
 
 	@Reflect
 	public static void vectorAdd(@RO ComputeContext cc, @RO S32Array left, @RO S32Array right, @WO S32Array out) {
-		cc.dispatchKernel(NDRange.of1D(left.length()), kc -> vectorAddKernel(kc, left, right, out));
+		cc.dispatchKernel(NDRange.of1D(left.length()), () -> vectorAddKernel(left, right, out));
 	}
 
 	@Test

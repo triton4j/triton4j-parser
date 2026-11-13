@@ -41,7 +41,7 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
 
-@Command(name = "triton-parser", mixinStandardHelpOptions = true, version = "0.1.0",
+@Command(name = "triton-parser", mixinStandardHelpOptions = true, version = "0.2.0",
 		description = "Parse Triton-style Python kernels and generate Java source.",
 		subcommands = { TritonParserCli.GenerateCommand.class, TritonParserCli.BenchmarkCommand.class })
 public final class TritonParserCli implements Runnable {
